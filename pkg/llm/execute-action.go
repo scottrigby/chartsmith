@@ -17,11 +17,9 @@ import (
 )
 
 const (
-	TextEditor_Sonnet37 = "text_editor_20250124"
-	TextEditor_Sonnet35 = "text_editor_20241022"
-
-	Model_Sonnet37 = "claude-3-7-sonnet-20250219"
-	Model_Sonnet35 = "claude-3-5-sonnet-20241022"
+	// See https://docs.anthropic.com/en/docs/build-with-claude/tool-use/text-editor-tool
+	TextEditor_Sonnet45 = "text_editor_20250728"
+	Model_Sonnet45      = "claude-4-5-sonnet-20250929"
 
 	minFuzzyMatchLen  = 50 // Minimum length for fuzzy matching
 	fuzzyMatchTimeout = 10 * time.Second
@@ -239,23 +237,23 @@ func PerformStringReplacement(content, oldStr, newStr string) (string, bool, err
 	// Add logging to track performance
 	startTime := time.Now()
 	defer func() {
-		logger.Debug("String replacement operation completed", 
+		logger.Debug("String replacement operation completed",
 			zap.Duration("time_taken", time.Since(startTime)))
 	}()
-	
+
 	// Log content sizes for diagnostics
-	logger.Debug("Starting string replacement", 
-		zap.Int("content_size", len(content)), 
+	logger.Debug("Starting string replacement",
+		zap.Int("content_size", len(content)),
 		zap.Int("old_string_size", len(oldStr)),
 		zap.Int("new_string_size", len(newStr)))
-	
+
 	// First try exact match
 	if strings.Contains(content, oldStr) {
 		logger.Debug("Found exact match, performing replacement")
 		updatedContent := strings.ReplaceAll(content, oldStr, newStr)
 		return updatedContent, true, nil
 	}
-	
+
 	logger.Debug("No exact match found, attempting fuzzy matching")
 
 	// Create a context with timeout for fuzzy matching
@@ -272,14 +270,14 @@ func PerformStringReplacement(content, oldStr, newStr string) (string, bool, err
 	go func() {
 		logger.Debug("Starting fuzzy match search")
 		fuzzyStartTime := time.Now()
-		
+
 		start, end := findBestMatchRegion(content, oldStr, minFuzzyMatchLen)
-		
-		logger.Debug("Fuzzy match search completed", 
+
+		logger.Debug("Fuzzy match search completed",
 			zap.Duration("time_taken", time.Since(fuzzyStartTime)),
 			zap.Int("start_pos", start),
 			zap.Int("end_pos", end))
-			
+
 		if start == -1 || end == -1 {
 			resultCh <- struct {
 				start, end int
@@ -301,15 +299,15 @@ func PerformStringReplacement(content, oldStr, newStr string) (string, bool, err
 			return content, false, result.err
 		}
 		// Replace the matched region with newStr
-		logger.Debug("Found fuzzy match, performing replacement", 
-			zap.Int("match_start", result.start), 
+		logger.Debug("Found fuzzy match, performing replacement",
+			zap.Int("match_start", result.start),
 			zap.Int("match_end", result.end),
-			zap.Int("match_length", result.end - result.start))
-			
+			zap.Int("match_length", result.end-result.start))
+
 		updatedContent := content[:result.start] + newStr + content[result.end:]
 		return updatedContent, false, nil
 	case <-ctx.Done():
-		logger.Warn("Fuzzy matching timed out", 
+		logger.Warn("Fuzzy matching timed out",
 			zap.Duration("timeout", fuzzyMatchTimeout),
 			zap.Duration("time_elapsed", time.Since(startTime)))
 		return content, false, fmt.Errorf("fuzzy matching timed out after %v", fuzzyMatchTimeout)
@@ -319,8 +317,8 @@ func PerformStringReplacement(content, oldStr, newStr string) (string, bool, err
 func findBestMatchRegion(content, oldStr string, minMatchLen int) (int, int) {
 	// Early return if strings are too small
 	if len(oldStr) < minMatchLen {
-		logger.Debug("String too small for fuzzy matching", 
-			zap.Int("length", len(oldStr)), 
+		logger.Debug("String too small for fuzzy matching",
+			zap.Int("length", len(oldStr)),
 			zap.Int("min_length", minMatchLen))
 		return -1, -1
 	}
@@ -328,7 +326,7 @@ func findBestMatchRegion(content, oldStr string, minMatchLen int) (int, int) {
 	bestStart := -1
 	bestEnd := -1
 	bestLen := 0
-	
+
 	// Set a max number of chunks to process to prevent excessive computation
 	maxChunks := 100
 	chunksProcessed := 0
@@ -344,32 +342,32 @@ func findBestMatchRegion(content, oldStr string, minMatchLen int) (int, int) {
 
 		// Get the current chunk
 		chunk := oldStr[i:chunkEnd]
-		
+
 		// Skip empty or tiny chunks
 		if len(chunk) < 10 {
 			continue
 		}
-		
+
 		chunksProcessed++
-		
+
 		// Find all occurrences of this chunk in the content
 		start := 0
-		maxOccurrences := 100  // Limit number of occurrences to check
+		maxOccurrences := 100 // Limit number of occurrences to check
 		occurrencesChecked := 0
-		
-		logger.Debug("Processing chunk", 
-			zap.Int("chunk_index", i), 
+
+		logger.Debug("Processing chunk",
+			zap.Int("chunk_index", i),
 			zap.Int("chunk_size", len(chunk)),
 			zap.Int("chunks_processed", chunksProcessed))
-		
+
 		for occurrencesChecked < maxOccurrences {
 			idx := strings.Index(content[start:], chunk)
 			if idx == -1 {
 				break
 			}
-			
+
 			occurrencesChecked++
-			
+
 			// Adjust index to be relative to the start of content
 			idx += start
 
@@ -377,7 +375,7 @@ func findBestMatchRegion(content, oldStr string, minMatchLen int) (int, int) {
 			matchStart := idx
 			matchEnd := idx + len(chunk)
 			matchLen := len(chunk)
-			
+
 			// Store the original i value, we'll need it for backward extension
 			originalI := i
 
@@ -393,7 +391,7 @@ func findBestMatchRegion(content, oldStr string, minMatchLen int) (int, int) {
 
 			// Try to extend backward
 			// Critical fix: don't modify the outer loop variable i here
-			backPos := originalI - 1  // Start one position before chunk
+			backPos := originalI - 1 // Start one position before chunk
 			for matchStart > 0 && backPos >= 0 {
 				if content[matchStart-1] == oldStr[backPos] {
 					matchStart--
@@ -408,8 +406,8 @@ func findBestMatchRegion(content, oldStr string, minMatchLen int) (int, int) {
 				bestStart = matchStart
 				bestEnd = matchEnd
 				bestLen = matchLen
-				
-				logger.Debug("Found better match", 
+
+				logger.Debug("Found better match",
 					zap.Int("match_length", matchLen),
 					zap.Int("match_start", matchStart),
 					zap.Int("match_end", matchEnd))
@@ -421,13 +419,13 @@ func findBestMatchRegion(content, oldStr string, minMatchLen int) (int, int) {
 	}
 
 	if bestLen >= minMatchLen {
-		logger.Debug("Found best match", 
+		logger.Debug("Found best match",
 			zap.Int("best_length", bestLen),
 			zap.Int("best_start", bestStart),
 			zap.Int("best_end", bestEnd))
 		return bestStart, bestEnd
 	}
-	
+
 	logger.Debug("No match found with minimum length",
 		zap.Int("best_length", bestLen),
 		zap.Int("required_min_length", minMatchLen))
@@ -507,47 +505,20 @@ func ExecuteAction(ctx context.Context, actionPlanWithPath llmtypes.ActionPlanWi
 		messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(workflowInstructions+updateMessage)))
 	}
 
-	tools := []anthropic.ToolParam{
+	// Use the built-in text editor tool for Claude 4.5
+	// See https://docs.anthropic.com/en/docs/build-with-claude/tool-use/text-editor-tool
+	tools := []anthropic.ToolUnionParam{
 		{
-			Name: anthropic.F(TextEditor_Sonnet35),
-			InputSchema: anthropic.F(interface{}(map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"command": map[string]interface{}{
-						"type": "string",
-						"enum": []string{"view", "str_replace", "create"},
-					},
-					"path": map[string]interface{}{
-						"type": "string",
-					},
-					"old_str": map[string]interface{}{
-						"type": "string",
-					},
-					"new_str": map[string]interface{}{
-						"type": "string",
-					},
-				},
-			})),
+			OfTextEditor20250728: &anthropic.ToolTextEditor20250728Param{},
 		},
 	}
 
-	toolUnionParams := make([]anthropic.ToolUnionUnionParam, len(tools))
-	for i, tool := range tools {
-		toolUnionParams[i] = tool
-	}
-
-	var disabled anthropic.ThinkingConfigEnabledType
-	disabled = "disabled"
-
 	for {
 		stream := client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
-			Model:     anthropic.F(Model_Sonnet35),
-			MaxTokens: anthropic.F(int64(8192)),
-			Messages:  anthropic.F(messages),
-			Tools:     anthropic.F(toolUnionParams),
-			Thinking: anthropic.F[anthropic.ThinkingConfigParamUnion](anthropic.ThinkingConfigEnabledParam{
-				Type: anthropic.F(disabled),
-			}),
+			Model:     Model_Sonnet45,
+			MaxTokens: 8192,
+			Messages:  messages,
+			Tools:     tools,
 		})
 
 		message := anthropic.Message{}
@@ -558,10 +529,10 @@ func ExecuteAction(ctx context.Context, actionPlanWithPath llmtypes.ActionPlanWi
 				return "", err
 			}
 
-			switch event := event.AsUnion().(type) {
+			switch eventVariant := event.AsAny().(type) {
 			case anthropic.ContentBlockDeltaEvent:
-				if event.Delta.Text != "" {
-					fmt.Printf("%s", event.Delta.Text)
+				if eventVariant.Delta.Text != "" {
+					fmt.Printf("%s", eventVariant.Delta.Text)
 				}
 			}
 		}
@@ -576,7 +547,7 @@ func ExecuteAction(ctx context.Context, actionPlanWithPath llmtypes.ActionPlanWi
 		toolResults := []anthropic.ContentBlockParamUnion{}
 
 		for _, block := range message.Content {
-			if block.Type == anthropic.ContentBlockTypeToolUse {
+			if block.Type == "tool_use" {
 				hasToolCalls = true
 				var response interface{}
 
@@ -667,8 +638,8 @@ func ExecuteAction(ctx context.Context, actionPlanWithPath llmtypes.ActionPlanWi
 		}
 
 		messages = append(messages, anthropic.MessageParam{
-			Role:    anthropic.F(anthropic.MessageParamRoleUser),
-			Content: anthropic.F(toolResults),
+			Role:    anthropic.MessageParamRoleUser,
+			Content: toolResults,
 		})
 	}
 

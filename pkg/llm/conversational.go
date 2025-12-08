@@ -96,48 +96,42 @@ func ConversationalChatMessage(ctx context.Context, streamCh chan string, doneCh
 
 	messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(chatMessage.Prompt)))
 
-	tools := []anthropic.ToolParam{
-		{
-			Name:        anthropic.F("latest_subchart_version"),
-			Description: anthropic.F("Return the latest version of a subchart from name"),
-			InputSchema: anthropic.F(interface{}(map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
+	tools := []anthropic.ToolUnionParam{
+		anthropic.ToolUnionParamOfTool(
+			anthropic.ToolInputSchemaParam{
+				Properties: map[string]interface{}{
 					"chart_name": map[string]interface{}{
 						"type":        "string",
 						"description": "The subchart name to get the latest version of",
 					},
 				},
-				"required": []string{"chart_name"},
-			})),
-		},
-		{
-			Name:        anthropic.F("latest_kubernetes_version"),
-			Description: anthropic.F("Return the latest version of Kubernetes"),
-			InputSchema: anthropic.F(interface{}(map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
+				Required: []string{"chart_name"},
+			},
+			"latest_subchart_version",
+		),
+		anthropic.ToolUnionParamOfTool(
+			anthropic.ToolInputSchemaParam{
+				Properties: map[string]interface{}{
 					"semver_field": map[string]interface{}{
 						"type":        "string",
 						"description": "One of 'major', 'minor', or 'patch'",
 					},
 				},
-				"required": []string{"semver_description"},
-			})),
-		},
+				Required: []string{"semver_description"},
+			},
+			"latest_kubernetes_version",
+		),
 	}
-
-	toolUnionParams := make([]anthropic.ToolUnionUnionParam, len(tools))
-	for i, tool := range tools {
-		toolUnionParams[i] = tool
-	}
+	// Set descriptions for tools
+	tools[0].OfTool.Description = anthropic.String("Return the latest version of a subchart from name")
+	tools[1].OfTool.Description = anthropic.String("Return the latest version of Kubernetes")
 
 	for {
 		stream := client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
-			Model:     anthropic.F(anthropic.ModelClaude3_7Sonnet20250219),
-			MaxTokens: anthropic.F(int64(8192)),
-			Messages:  anthropic.F(messages),
-			Tools:     anthropic.F(toolUnionParams),
+			Model:     Model_Sonnet45,
+			MaxTokens: 8192,
+			Messages:  messages,
+			Tools:     tools,
 		})
 
 		message := anthropic.Message{}
@@ -149,10 +143,10 @@ func ConversationalChatMessage(ctx context.Context, streamCh chan string, doneCh
 				return err
 			}
 
-			switch event := event.AsUnion().(type) {
+			switch eventVariant := event.AsAny().(type) {
 			case anthropic.ContentBlockDeltaEvent:
-				if event.Delta.Text != "" {
-					streamCh <- event.Delta.Text
+				if eventVariant.Delta.Text != "" {
+					streamCh <- eventVariant.Delta.Text
 				}
 			}
 		}
@@ -168,7 +162,7 @@ func ConversationalChatMessage(ctx context.Context, streamCh chan string, doneCh
 		toolResults := []anthropic.ContentBlockParamUnion{}
 
 		for _, block := range message.Content {
-			if block.Type == anthropic.ContentBlockTypeToolUse {
+			if block.Type == "tool_use" {
 				hasToolCalls = true
 				var response interface{}
 				switch block.Name {
@@ -224,8 +218,8 @@ func ConversationalChatMessage(ctx context.Context, streamCh chan string, doneCh
 		}
 
 		messages = append(messages, anthropic.MessageParam{
-			Role:    anthropic.F(anthropic.MessageParamRoleUser),
-			Content: anthropic.F(toolResults),
+			Role:    anthropic.MessageParamRoleUser,
+			Content: toolResults,
 		})
 	}
 
